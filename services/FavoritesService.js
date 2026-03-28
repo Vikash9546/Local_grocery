@@ -1,7 +1,46 @@
+import { auth, db } from '../firebase/config';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
+
 class FavoritesServiceImpl {
     constructor() {
         this.favorites = [];
         this.listeners = [];
+        this.userId = null;
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                this.userId = user.uid;
+                this.loadFavoritesFromFirebase();
+            } else {
+                this.userId = null;
+                this.favorites = [];
+                this.notifyListeners();
+            }
+        });
+    }
+
+    async saveFavoritesToFirebase() {
+        if (!this.userId) return;
+        try {
+            await setDoc(doc(db, 'favorites', this.userId), { items: this.favorites });
+        } catch (e) {
+            console.error("Error saving favorites", e);
+        }
+    }
+
+    async loadFavoritesFromFirebase() {
+        if (!this.userId) return;
+        try {
+            const docRef = doc(db, 'favorites', this.userId);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists() && docSnap.data().items) {
+                this.favorites = docSnap.data().items;
+                this.notifyListeners();
+            }
+        } catch (e) {
+            console.error("Error loading favorites", e);
+        }
     }
 
     toggleFavorite(item) {
@@ -15,6 +54,7 @@ class FavoritesServiceImpl {
             added = true;
         }
         this.notifyListeners();
+        this.saveFavoritesToFirebase();
         return added;
     }
 
@@ -23,6 +63,7 @@ class FavoritesServiceImpl {
         if (index > -1) {
             this.favorites.splice(index, 1);
             this.notifyListeners();
+            this.saveFavoritesToFirebase();
         }
     }
 
@@ -43,3 +84,4 @@ class FavoritesServiceImpl {
 }
 
 export const FavoritesService = new FavoritesServiceImpl();
+

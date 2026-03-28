@@ -1,7 +1,46 @@
+import { auth, db } from '../firebase/config';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
+
 class CartServiceImpl {
     constructor() {
         this.cart = [];
         this.listeners = [];
+        this.userId = null;
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                this.userId = user.uid;
+                this.loadCartFromFirebase();
+            } else {
+                this.userId = null;
+                this.cart = [];
+                this.notifyListeners();
+            }
+        });
+    }
+
+    async saveCartToFirebase() {
+        if (!this.userId) return;
+        try {
+            await setDoc(doc(db, 'carts', this.userId), { items: this.cart });
+        } catch (e) {
+            console.error("Error saving cart", e);
+        }
+    }
+
+    async loadCartFromFirebase() {
+        if (!this.userId) return;
+        try {
+            const docRef = doc(db, 'carts', this.userId);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists() && docSnap.data().items) {
+                this.cart = docSnap.data().items;
+                this.notifyListeners();
+            }
+        } catch (e) {
+            console.error("Error loading cart", e);
+        }
     }
 
     // Add items to cart (for repeat orders)
@@ -15,6 +54,7 @@ class CartServiceImpl {
             }
         });
         this.notifyListeners();
+        this.saveCartToFirebase();
     }
 
     // Add single item to cart
@@ -26,6 +66,7 @@ class CartServiceImpl {
             this.cart.push({ ...item, quantity: 1 });
         }
         this.notifyListeners();
+        this.saveCartToFirebase();
     }
 
     // Remove single item from cart
@@ -39,6 +80,7 @@ class CartServiceImpl {
             }
         }
         this.notifyListeners();
+        this.saveCartToFirebase();
     }
 
     // Get cart items
@@ -58,6 +100,7 @@ class CartServiceImpl {
     clearCart() {
         this.cart = [];
         this.notifyListeners();
+        this.saveCartToFirebase();
     }
 
     // Subscribe to cart changes
